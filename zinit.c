@@ -17,7 +17,7 @@ void warnpchild(char *str) {
     fprintf(stderr, "[-]   %s: %s\n", str, strerror(errno));
 }
 
-int zcore(char **envp) {
+pid_t zcore(char **envp) {
     pid_t corepid;
     char *argscore[] = {ZEROCORE_BIN, "-c", "/etc/zero-os/zero-os.toml", NULL};
 
@@ -26,7 +26,7 @@ int zcore(char **envp) {
 
     if(corepid == -1) {
         perror("fork");
-        return 1;
+        return -1;
     }
 
     if(corepid == 0) {
@@ -41,14 +41,14 @@ int zcore(char **envp) {
 
     printf("[+] child started with pid %d\n", corepid);
 
-    return 0;
+    return corepid;
 }
 
-int zwait() {
+int zwait(pid_t corepid) {
     int wstatus;
     pid_t child;
 
-    if((child = waitpid(-1, &wstatus, 0) < 0)) {
+    if((child = waitpid(corepid, &wstatus, 0) < 0)) {
         warnp("waitpid");
         return 1;
     }
@@ -66,7 +66,7 @@ int main(int argc, char **argv, char **envp) {
     (void) argv;
 
     struct timespec timeout = {
-        .tv_sec = 1,
+        .tv_sec = 2,
         .tv_nsec = 0,
     };
 
@@ -76,7 +76,9 @@ int main(int argc, char **argv, char **envp) {
     nanosleep(&timeout, NULL);
 
     while(1) {
-        if(zcore(envp)) {
+        pid_t corepid;
+
+        if((corepid = zcore(envp)) < 0) {
             printf("[-] could not prepare 0core environment\n");
             nanosleep(&timeout, NULL);
 
@@ -84,7 +86,7 @@ int main(int argc, char **argv, char **envp) {
             // kernel panic
         }
 
-        if(zwait()) {
+        if(zwait(corepid)) {
             printf("[-] abnormal termination, waiting for restart\n");
             nanosleep(&timeout, NULL);
         }
