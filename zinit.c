@@ -56,8 +56,8 @@ procstat_t zwait(pid_t corepid) {
     int wstatus;
     pid_t child;
 
-    if((child = waitpid(-1, &wstatus, 0) < 0)) {
-        warnp("waitpid");
+    if((child = wait(&wstatus)) < 0) {
+        warnp("wait");
         return SYSTEM_ERROR;
     }
 
