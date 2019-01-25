@@ -25,4 +25,12 @@ the firewall is (for some reason) modified externally, this will lead to an unex
 ## Splash
 In order to debug easily, adding a kernel option like `nosplash` is interresting to see what
 happens without being annoyed with the splash screen. Running as « Agent Mode » is not enough since
-we want the full power of core0 running, but still want to disable splash
+we want the full power of core0 running, but still want to disable splash.
+
+## Modules
+The core0 code can go back into single binary (no modules/plugins) and gets back to it's original
+size, since we should just restart it in order to update it.
+
+## Core Cleanup
+All code related to process management which was needed as being PID 1 can be removed
+
