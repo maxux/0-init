@@ -9,6 +9,14 @@
 
 #define ZEROCORE_BIN  "/sbin/core0-real"
 
+typedef enum procstat_t {
+    PROCESS_DIED,
+    PROCESS_CORE0_GRACEFULLY,
+    PROCESS_CORE0_ERROR,
+    SYSTEM_ERROR,
+
+} procstat_t;
+
 void warnp(char *str) {
     fprintf(stderr, "[-] %s: %s\n", str, strerror(errno));
 }
@@ -44,24 +52,42 @@ pid_t zcore(char **envp) {
     return corepid;
 }
 
-int zwait(pid_t corepid) {
+procstat_t zwait(pid_t corepid) {
     int wstatus;
     pid_t child;
 
-    if((child = waitpid(corepid, &wstatus, 0) < 0)) {
+    if((child = waitpid(-1, &wstatus, 0) < 0)) {
         warnp("waitpid");
-        return 1;
+        return SYSTEM_ERROR;
+    }
+
+    if(child != corepid) {
+        // we catched a died process
+        printf("[+] process %d died, cleaning state\n", child);
+        return PROCESS_DIED;
     }
 
     if(WIFEXITED(wstatus) && WEXITSTATUS(wstatus) > 0) {
         printf("[-] abnormal termination of core0\n");
-        return 1;
+        return PROCESS_CORE0_ERROR;
     }
 
-    return 0;
+    return PROCESS_CORE0_GRACEFULLY;
 }
 
-int main(int argc, char **argv, char **envp) {
+pid_t coreinit(char **envp) {
+    pid_t corepid;
+
+    if((corepid = zcore(envp)) < 0) {
+        printf("[-] cannot prepare core0 environment, cannot do anything more\n");
+        exit(EXIT_FAILURE);
+        // kernel panic - attempted to kill init, obviously
+    }
+
+    return corepid;
+}
+
+void sysloop(int argc, char **argv, char **envp) {
     (void) argc;
     (void) argv;
 
@@ -70,31 +96,43 @@ int main(int argc, char **argv, char **envp) {
         .tv_nsec = 0,
     };
 
-    // signal(SIGCHLD, SIG_IGN);
-
-    printf("[+] initializing zero-init bootstrapping\n");
-    nanosleep(&timeout, NULL);
+    pid_t corepid;
+    corepid = coreinit(envp);
 
     while(1) {
-        pid_t corepid;
+        int procstat = zwait(corepid);
 
-        if((corepid = zcore(envp)) < 0) {
-            printf("[-] could not prepare 0core environment\n");
-            nanosleep(&timeout, NULL);
+        switch(procstat) {
+            case PROCESS_DIED:
+                // nothing special to do
+                break;
 
-            exit(EXIT_FAILURE);
-            // kernel panic
+            case SYSTEM_ERROR:
+                // let's try again, nothing special to do
+                break;
+
+            case PROCESS_CORE0_ERROR:
+                printf("[-] abnormal termination, waiting for restart\n");
+                nanosleep(&timeout, NULL);
+                break;
+
+            case PROCESS_CORE0_GRACEFULLY:
+                printf("[+] core0 gracefully exited, restarting...\n");
+                // post-update process
+                return;
         }
-
-        if(zwait(corepid)) {
-            printf("[-] abnormal termination, waiting for restart\n");
-            nanosleep(&timeout, NULL);
-        }
-
-        printf("[+] core0 exited, restarting...\n");
     }
+}
 
-    // never reached
+int main(int argc, char **argv, char **envp) {
+    printf("[+] ==============================================\n");
+    printf("[+] ==            Zero-OS System Init           ==\n");
+    printf("[+] ==============================================\n");
+    printf("[+]\n");
+
+    while(1) {
+        sysloop(argc, argv, envp);
+    }
 
     return 0;
 }
